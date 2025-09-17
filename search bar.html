@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rooftop Measurement (with Search)</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
+    <style>
+        body { margin:0; padding:0; }
+        #map { height: 100vh; }
+        #search {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: white;
+            padding: 6px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+
+<!-- Search bar -->
+<div id="search">
+    <input type="text" id="address" placeholder="Enter location..." size="40">
+    <button onclick="searchAddress()">Search</button>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+<script src="https://unpkg.com/leaflet-geometryutil"></script>
+
+<script>
+    // Initialize map
+    var map = L.map('map').setView([12.9716, 77.5946], 15); // Default: Bangalore
+
+    // OpenStreetMap layer
+    var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+    });
+
+    // Esri Satellite Imagery
+    var esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles © Esri'
+    });
+
+    // Default layer
+    esriSat.addTo(map);
+
+    // Layer control
+    L.control.layers({
+        "OpenStreetMap": osm,
+        "Esri Satellite": esriSat
+    }).addTo(map);
+
+    // Drawing tool
+    var drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
+    var drawControl = new L.Control.Draw({
+        edit: { featureGroup: drawnItems },
+        draw: { polygon: true, marker: false, polyline: false, rectangle: false, circle: false, circlemarker: false }
+    });
+    map.addControl(drawControl);
+
+    // When user draws a polygon
+    map.on(L.Draw.Event.CREATED, function (event) {
+        var layer = event.layer;
+        drawnItems.addLayer(layer);
+
+        var latlngs = layer.getLatLngs()[0];
+        var area = L.GeometryUtil.geodesicArea(latlngs); // in m²
+
+        var panelArea = 1.7; // m² per solar panel
+        var panelCount = Math.floor(area / panelArea);
+
+        alert(`Rooftop Area: ${area.toFixed(2)} m²\nEstimated Solar Panels: ${panelCount}`);
+    });
+
+    // Search function using Nominatim
+    function searchAddress() {
+        var query = document.getElementById('address').value;
+        if (!query) return alert("Please enter a location");
+
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.length === 0) {
+                alert("Location not found");
+                return;
+            }
+            var lat = data[0].lat;
+            var lon = data[0].lon;
+            map.setView([lat, lon], 19); // zoom into location
+            L.marker([lat, lon]).addTo(map).bindPopup(query).openPopup();
+        })
+        .catch(err => alert("Error fetching location"));
+    }
+</script>
+
+</body>
+</html>

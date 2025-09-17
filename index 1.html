@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>India Map - Satellite View</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+        #map {
+            height: 100vh; /* Full screen height */
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+    // Initialize the map centered on India
+    var map = L.map('map').setView([20.5937, 78.9629], 5);
+
+    // Add Satellite Layer (ESRI Imagery)
+    L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        {
+            attribution: 'Tiles &copy; Esri',
+            maxZoom: 20
+        }
+    ).addTo(map);
+
+    // Add zoom controls and mouse location popup
+    map.on('click', function(e) {
+        alert("You clicked the map at " + e.latlng.toString());
+    });
+</script>
+
+</body>
+</html>

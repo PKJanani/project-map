@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>India Satellite Map — Draw Rooftops & Export</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <!-- Leaflet Draw CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+  <!-- Fullscreen control CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.fullscreen/Control.FullScreen.css" />
+  <!-- Measure control CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-measure/dist/leaflet-measure.css" />
+
+  <style>
+    html,body { height: 100%; margin: 0; }
+    #map { height: calc(100vh - 120px); width: 100%; }
+    #controls { padding: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button { padding: 6px 10px; cursor: pointer; }
+    #info { padding: 10px; }
+    textarea { width: 100%; height: 120px; margin-top: 6px; font-family: monospace; }
+  </style>
+</head>
+<body>
+
+  <div id="controls">
+    <button id="btnExport">Export All Shapes (GeoJSON)</button>
+    <button id="btnDownload">Download GeoJSON</button>
+    <button id="btnClear">Clear All Shapes</button>
+    <label style="margin-left:8px;">Satellite provider: <strong>ESRI World Imagery</strong></label>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="info">
+    <strong>Last drawn polygon area:</strong> <span id="area">—</span>
+    <div>
+      <strong>GeoJSON (last or exported):</strong>
+      <textarea id="geojson" readonly placeholder="Draw polygon(s) to see GeoJSON here..."></textarea>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- Leaflet Draw -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+  <!-- Turf for accurate geodesic area -->
+  <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
+  <!-- Fullscreen control -->
+  <script src="https://unpkg.com/leaflet.fullscreen/Control.FullScreen.js"></script>
+  <!-- Measure control -->
+  <script src="https://unpkg.com/leaflet-measure/dist/leaflet-measure.js"></script>
+
+  <script>
+  (function() {
+    // India bounding box (approx): prevents panning outside India
+    const indiaBounds = [[6.5, 68.0], [35.5, 97.5]];
+
+    // Create map and restrict to India bounds
+    const map = L.map('map', {
+      center: [22.9734, 78.6569],
+      zoom: 5,
+      minZoom: 5,
+      maxZoom: 19,
+      maxBounds: indiaBounds,
+      maxBoundsViscosity: 0.9,
+      fullscreenControl: true
+    });
+
+    // ESRI World Imagery (satellite) - fast & good resolution
+    const satellite = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        maxZoom: 20,
+        attribution: 'Tiles © Esri'
+      }
+    ).addTo(map);
+
+    // OSM Streets (fallback)
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    });
+
+    // Layer control (Satellite default)
+    const baseMaps = { "Satellite (ESRI)": satellite, "Street (OSM)": osm };
+    L.control.layers(baseMaps).addTo(map);
+
+    // Scale bar
+    L.control.scale({ metric: true, imperial: false }).addTo(map);
+
+    // Measure control (distance/area)
+    L.control.measure({
+      primaryLengthUnit: 'meters',
+      primaryAreaUnit: 'sqmeters',
+      activeColor: '#e41a1c',
+      completedColor: '#4daf4a'
+    }).addTo(map);
+
+    // FeatureGroup for drawn shapes
+    const drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
+    // Draw control configuration (polygon enabled)
+    const drawControl = new L.Control.Draw({
+      draw: {
+        polygon: {
+          allowIntersection: false,
+          showArea: true,
+          shapeOptions: {
+            color: '#3388ff'
+          }
+        },
+        polyline: false,
+        rectangle: false,
+        circle: false,
+        marker: false,
+        circlemarker: false
+      },
+      edit: {
+        featureGroup: drawnItems,
+        remove: true
+      }
+    });
+    map.addControl(drawControl);
+
+    // Handle create event
+    map.on(L.Draw.Event.CREATED, function (event) {
+      const layer = event.layer;
+      drawnItems.addLayer(layer);
+      processLayer(layer);
+    });
+
+    // Handle edit event (update area & geojson)
+    map.on(L.Draw.Event.EDITED, function(e) {
+      e.layers.eachLayer(function(layer) {
+        processLayer(layer);
+      });
+    });
+
+    // Handle delete event (clear textarea if none left)
+    map.on(L.Draw.Event.DELETED, function(e) {
+      if (drawnItems.getLayers().length === 0) {
+        document.getElementById('area').innerText = '—';
+        document.getElementById('geojson').value = '';
+      } else {
+        // update last shape shown
+        const last = drawnItems.getLayers().slice(-1)[0];
+        if (last) processLayer(last);
+      }
+    });
+
+    // Process a Leaflet layer: compute area, show geojson in textarea
+    function processLayer(layer) {
+      try {
+        const gj = layer.toGeoJSON();
+        // turf.area returns area in square meters using geodesic calculations
+        const area_m2 = turf.area(gj);
+        const area_ft2 = area_m2 * 10.763910416;
+
+        const areaText = `${area_m2.toFixed(2)} m² (${area_ft2.toFixed(2)} ft²)`;
+        document.getElementById('area').innerText = areaText;
+
+        // Write the last shape's GeoJSON
+        document.getElementById('geojson').value = JSON.stringify(gj, null, 2);
+
+        // Bind a popup on the layer to show area
+        if (layer.bindPopup) {
+          layer.bindPopup('Area: ' + areaText).openPopup();
+        }
+      } catch (err) {
+        console.error('Error processing layer:', err);
+      }
+    }
+
+    // Export all shapes as a combined GeoJSON FeatureCollection
+    function exportAllGeoJSON() {
+      const all = drawnItems.toGeoJSON();
+      if (!all || !all.features || all.features.length === 0) {
+        alert('No shapes drawn to export.');
+        return null;
+      }
+      const out = JSON.stringify(all, null, 2);
+      // show in textarea
+      document.getElementById('geojson').value = out;
+      return out;
+    }
+
+    // Download the exported GeoJSON as a file
+    function downloadGeoJSON() {
+      const out = exportAllGeoJSON();
+      if (!out) return;
+      const blob = new Blob([out], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'rooftops_geojson.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    // Clear all drawn shapes
+    function clearAllShapes() {
+      if (confirm('Remove all drawn shapes?')) {
+        drawnItems.clearLayers();
+        document.getElementById('area').innerText = '—';
+        document.getElementById('geojson').value = '';
+      }
+    }
+
+    // Button events
+    document.getElementById('btnExport').addEventListener('click', exportAllGeoJSON);
+    document.getElementById('btnDownload').addEventListener('click', downloadGeoJSON);
+    document.getElementById('btnClear').addEventListener('click', clearAllShapes);
+
+    // Fit map to India on load
+    map.fitBounds(indiaBounds);
+
+    // Optional: speed tips
+    console.log('Map ready — draw polygons (polygon tool at top-left). Use Export/Download to save GeoJSON.');
+  })();
+  </script>
+
+</body>
+</html>
